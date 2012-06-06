@@ -122,6 +122,7 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	EventSink* pSink = new EventSink;
 	IWbemObjectSinkPtr sink(pSink, true);
+	
 
 	//Allow asynchronous callbacks bypass security settings
 	{

@@ -1,7 +1,8 @@
 #pragma once
+#include <memory>
+#include <vector>
+#include <functional>
 #include <Wbemidl.h>
-
-#include <tr/function>
 # pragma comment(lib, "wbemuuid.lib")
 
 class EventSink: public IWbemObjectSink
@@ -11,6 +12,7 @@ public:
     bool bDone;
 
 public:
+	typedef std::function<void(IWbemClassObject *)> Listener;
     EventSink() { _refCount = 0; }
    ~EventSink() { bDone = true; }
 
@@ -30,6 +32,9 @@ public:
             /* [in] */ BSTR strParam,
             /* [in] */ IWbemClassObject __RPC_FAR *pObjParam
             );
+	void addListener(Listener & listener);
+private:
+	std::vector<Listener> _listeners;
 };
 
 

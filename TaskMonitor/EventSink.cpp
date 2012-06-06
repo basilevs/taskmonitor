@@ -33,7 +33,9 @@ HRESULT EventSink::Indicate(long lObjectCount,
 
     for (int i = 0; i < lObjectCount; i++)
     {
-        printf("Event occurred\n");
+        for (auto listenerIterator = _listeners.begin(); listenerIterator != _listeners.end(); ++listenerIterator) {
+			(*listenerIterator)->onEvent(apObjArray[i]);
+		}
     }
 
     return WBEM_S_NO_ERROR;
