@@ -15,7 +15,7 @@ ComError::~ComError(void)
 }
 
 
-static string toConsoleEncoding(const wstring & input) {
+string toConsoleEncoding(const wstring & input) {
 	enum {BUFFER_SIZE = 1000};
 	char buffer[BUFFER_SIZE];
 	int count = WideCharToMultiByte(GetConsoleOutputCP(), 0, input.c_str(), input.size(), buffer, BUFFER_SIZE-1, 0, 0);

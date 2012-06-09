@@ -32,7 +32,7 @@ public:
             /* [in] */ BSTR strParam,
             /* [in] */ IWbemClassObject __RPC_FAR *pObjParam
             );
-	void addListener(Listener & listener) {_listeners.push_back(listener);}
+	void addListener(const Listener & listener) {_listeners.push_back(listener);}
 private:
 	std::vector<Listener> _listeners; //boost::signal2 is better
 };

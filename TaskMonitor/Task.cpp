@@ -2,7 +2,8 @@
 #include "Task.h"
 
 
-Task::Task(void)
+Task::Task(unsigned pid):
+	_pid(pid)
 {
 }
 

@@ -41,3 +41,4 @@ T query(IUnknown & source) {
 	return T(static_cast<typename T::Interface*>(out));
 }
 
+std::string toConsoleEncoding(const std::wstring & input);

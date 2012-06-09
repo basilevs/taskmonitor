@@ -1,7 +1,8 @@
-// TaskMonitor.cpp : Defines the entry point for the console application.
-//
-
 #include "stdafx.h"
+
+
+#include <memory>
+
 
 #include <comip.h>
 #include <comdef.h>
@@ -43,6 +44,7 @@ _COM_SMARTPTR_TYPEDEF(IWbemLocator,        __uuidof(IWbemLocator));
 _COM_SMARTPTR_TYPEDEF(IWbemServices,       __uuidof(IWbemServices));
 _COM_SMARTPTR_TYPEDEF(IUnsecuredApartment, __uuidof(IUnsecuredApartment));
 _COM_SMARTPTR_TYPEDEF(IWbemObjectSink,     __uuidof(IWbemObjectSink));
+_COM_SMARTPTR_TYPEDEF(EventSink,           __uuidof(IWbemObjectSink)); //Incorrect. Do not instantiate internally.
 
 IWbemServicesPtr connectToWmiServices() {
 	// Step 3: ---------------------------------------------------
@@ -113,7 +115,9 @@ public:
 	template<class T>
 	T wrap(T & input) {
 		IUnknown* pStubUnk = NULL;
-		HRESULT hres = _appartment->CreateObjectStub(input, &pStubUnk);
+		//Many additional references to wrapped object are made here from another thread.
+		//This causes virtually infinite lifetime for wrapped object.
+		HRESULT hres = _appartment->CreateObjectStub(input, &pStubUnk); 
 		ComError::handle(hres, "Failed to enable unsecure callbacks");
 		IUnknownPtr unk(pStubUnk); // To free the reference returned by CreateObjectStub.
 		//Query adds another reference
@@ -121,40 +125,72 @@ public:
 	}
 };
 
+//Controls query interruption for exception safety
+//We absolutely can't continue sending events to event handler that might reference local context, that is already out of scope.
+class Query {
+	IWbemServicesPtr _services;
+	IWbemObjectSinkPtr _sink;
+public:
+	Query(IWbemServices & services, IWbemObjectSink & sink, const _bstr_t & query):
+	  _services(&services, true),
+	  _sink(&sink, true)
+	{
+		HRESULT hres = services.ExecNotificationQueryAsync(
+			_bstr_t("WQL"),
+			_bstr_t(query),
+			WBEM_FLAG_SEND_STATUS,
+			NULL,
+			&sink);
+		ComError::handleWithErrorInfo(hres, string("Failed to perform async query: ")+static_cast<char*>(query), &services);
+	}
+	void cancel() {
+		_services->CancelAsyncCall(_sink);
+	}
+	~Query() {
+		cancel();
+	}
+};
+
+unique_ptr<Query> notificationQuery(IWbemServices & services, const _bstr_t & query, IWbemObjectSink & sink)
+{
+	return unique_ptr<Query>(new Query(services, sink, query));
+}
+
+unique_ptr<Query> notificationQueryForType(IWbemServices & services, const _bstr_t & type, IWbemObjectSink & sink) {
+	return notificationQuery(services, _bstr_t("SELECT * FROM ") + type + _bstr_t(" WITHIN 1 WHERE TargetInstance ISA 'Win32_Process'"), sink);
+}
+
+wostream & operator <<(wostream & ostr, IWbemClassObject & object) {
+	BSTR text;
+	ComError::handleWithErrorInfo(object.GetObjectText(0, &text), string("Failed to get object text"), &object);
+	ostr << text;
+	SysFreeString(text);
+	return ostr;
+}
+
 int _tmain(int argc, _TCHAR* argv[])
 {
 
 	// Step 1: --------------------------------------------------
     // Initialize COM. ------------------------------------------
 	ComInitializer comInitializer;
-
 	IWbemServicesPtr services = connectToWmiServices();
+	UnsecuredAppartment appartment;
 
     // Step 6: -------------------------------------------------
     // Receive event notifications -----------------------------
 
-    
-	UnsecuredAppartment appartment;
-
-	EventSink* pSink = new EventSink;
-	EventSink::Listener createListener = [](IWbemClassObject *) {
-		cout << "Created" << endl;
-	};
-	pSink->addListener(createListener);
+		
+	EventSink * pSink = new EventSink;
 	IWbemObjectSinkPtr sink(pSink, true);
+	pSink->addListener([](IWbemClassObject * x) {
+		wcout << *x << endl;
+	});
 	sink = appartment.wrap(sink);
-
-	{
-		HRESULT hres = services->ExecNotificationQueryAsync(
-			_bstr_t("WQL"),
-			_bstr_t("SELECT * FROM __InstanceCreationEvent WITHIN 1 WHERE TargetInstance ISA 'Win32_Process'"),
-			WBEM_FLAG_SEND_STATUS,
-			NULL,
-			sink);
-		ComError::handleWithErrorInfo(hres, "Failed to perform async query", services.GetInterfacePtr());
-	}
+	unique_ptr<Query> query1 = notificationQueryForType(services, "__InstanceCreationEvent", sink);
+	unique_ptr<Query> query2 = notificationQueryForType(services, "__InstanceDeletionEvent", sink);
+	unique_ptr<Query> query3 = notificationQueryForType(services, "__InstanceModificationEvent", sink);
 	Sleep(10000);
-	services->CancelAsyncCall(sink);
 
 	return 0;
 }
