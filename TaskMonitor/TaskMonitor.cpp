@@ -44,13 +44,7 @@ _COM_SMARTPTR_TYPEDEF(IWbemServices,       __uuidof(IWbemServices));
 _COM_SMARTPTR_TYPEDEF(IUnsecuredApartment, __uuidof(IUnsecuredApartment));
 _COM_SMARTPTR_TYPEDEF(IWbemObjectSink,     __uuidof(IWbemObjectSink));
 
-int _tmain(int argc, _TCHAR* argv[])
-{
-
-	// Step 1: --------------------------------------------------
-    // Initialize COM. ------------------------------------------
-	ComInitializer comInitializer;
-
+IWbemServicesPtr connectToWmiServices() {
 	// Step 3: ---------------------------------------------------
     // Obtain the initial locator to WMI -------------------------
 
@@ -59,9 +53,8 @@ int _tmain(int argc, _TCHAR* argv[])
 	if (!locator) {
 		throw runtime_error("Failed to obtain WMI locator");
 	}
-		
 
-    // Step 4: ---------------------------------------------------
+	// Step 4: ---------------------------------------------------
     // Connect to WMI through the IWbemLocator::ConnectServer method
 
 	IWbemServicesPtr services;
@@ -93,7 +86,7 @@ int _tmain(int argc, _TCHAR* argv[])
     // Set security levels on the proxy -------------------------
 	{
 		HRESULT hres = CoSetProxyBlanket(
-			services.GetInterfacePtr(),  // Indicates the proxy to set
+			services,  // Indicates the proxy to set
 			RPC_C_AUTHN_WINNT,           // RPC_C_AUTHN_xxx 
 			RPC_C_AUTHZ_NONE,            // RPC_C_AUTHZ_xxx 
 			NULL,                        // Server principal name 
@@ -104,34 +97,52 @@ int _tmain(int argc, _TCHAR* argv[])
 		);
 		ComError::handle(hres, "Failed to configure proxy security");
 	}
+	return services;
+}
+
+class UnsecuredAppartment {
+	IUnsecuredApartmentPtr _appartment;
+public:
+	UnsecuredAppartment() {
+		_appartment.CreateInstance(CLSID_UnsecuredApartment, 0, CLSCTX_LOCAL_SERVER);
+		if (!_appartment) {
+			throw runtime_error("Failed to create UnsecuredApartment");
+		}
+	}
+	//Allows asynchronous callbacks bypass security settings
+	template<class T>
+	T wrap(T & input) {
+		IUnknown* pStubUnk = NULL;
+		HRESULT hres = _appartment->CreateObjectStub(input, &pStubUnk);
+		ComError::handle(hres, "Failed to enable unsecure callbacks");
+		IUnknownPtr unk(pStubUnk); // To free the reference returned by CreateObjectStub.
+		//Query adds another reference
+		return query<T>(unk);
+	}
+};
+
+int _tmain(int argc, _TCHAR* argv[])
+{
+
+	// Step 1: --------------------------------------------------
+    // Initialize COM. ------------------------------------------
+	ComInitializer comInitializer;
+
+	IWbemServicesPtr services = connectToWmiServices();
+
     // Step 6: -------------------------------------------------
     // Receive event notifications -----------------------------
 
     
-	IUnsecuredApartmentPtr appartment;
-	{
-		// Use an unsecured apartment for security
-		IUnsecuredApartment* pUnsecApp = NULL;
-
-		HRESULT hres = CoCreateInstance(CLSID_UnsecuredApartment, NULL, 
-			CLSCTX_LOCAL_SERVER, IID_IUnsecuredApartment, 
-			(void**)&pUnsecApp);
-		ComError::handle(hres, "Failed to initialize unsecured appartment");
-		appartment.Attach(pUnsecApp);
-	}
+	UnsecuredAppartment appartment;
 
 	EventSink* pSink = new EventSink;
+	EventSink::Listener createListener = [](IWbemClassObject *) {
+		cout << "Created" << endl;
+	};
+	pSink->addListener(createListener);
 	IWbemObjectSinkPtr sink(pSink, true);
-	
-
-	//Allow asynchronous callbacks bypass security settings
-	{
-		IUnknown* pStubUnk = NULL;
-		HRESULT hres = appartment->CreateObjectStub(sink, &pStubUnk);
-		ComError::handle(hres, "Failed to enable callbacks");
-		IUnknownPtr unk(pStubUnk);
-		sink.Attach(query<IWbemObjectSinkPtr>(unk));
-	}
+	sink = appartment.wrap(sink);
 
 	{
 		HRESULT hres = services->ExecNotificationQueryAsync(
