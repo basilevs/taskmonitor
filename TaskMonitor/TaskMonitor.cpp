@@ -1,13 +1,16 @@
 #include "stdafx.h"
 
+#define _CRTDBG_MAP_ALLOC 1
+#define _CRTDBG_MAP_ALLOC_NEW 1
+#include <stdlib.h>
+#include <crtdbg.h>
 
 #include <memory>
-#include <map>
 
 #include <comip.h>
 #include <comdef.h>
 
-	
+
 
 #include <conio.h>
 
@@ -174,7 +177,7 @@ wostream & operator <<(wostream & ostr, IWbemClassObject & object) {
 
 int _tmain(int argc, _TCHAR* argv[])
 {
-
+	{
 	// Step 1: --------------------------------------------------
 	// Initialize COM. ------------------------------------------
 	ComInitializer comInitializer;
@@ -204,9 +207,10 @@ int _tmain(int argc, _TCHAR* argv[])
 	unique_ptr<Query> query1 = notificationQueryForType(services, "__InstanceCreationEvent", sink);
 	unique_ptr<Query> query2 = notificationQueryForType(services, "__InstanceDeletionEvent", sink);
 	unique_ptr<Query> query3 = notificationQueryForType(services, "__InstanceModificationEvent", sink);
-	
-	_getwch();
 
+	_getwch();
+	}
+	_CrtDumpMemoryLeaks();
 	return 0;
 }
 

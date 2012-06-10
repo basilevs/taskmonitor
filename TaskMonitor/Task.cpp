@@ -60,7 +60,7 @@ IWbemClassObjectPtr parseVariant<IWbemClassObjectPtr>(VARIANT & v) {
 	ComError::handle(hres, "Failed to convert data to object");
 //	if (V_VT(&v) != VT_UNKNOWN)
 //		throw runtime_error("Not an object");
-	IWbemClassObjectPtr rv = V_UNKNOWN(&v, true); //Note: reference is created here, as VariantClear() will clear variant reference.
+	IWbemClassObjectPtr rv = V_UNKNOWN(&v);
 	VariantClear(&n);
 	return rv;
 }
