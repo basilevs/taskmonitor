@@ -1,10 +1,28 @@
 #pragma once
+#include <functional>
+#include <map>
+#include <comdef.h>
+#include <comip.h>
+#include <Wbemidl.h>
+
+_COM_SMARTPTR_TYPEDEF(IWbemClassObject,     __uuidof(IWbemClassObject));
+
+//Stores process state to determine is notifcation is interesting
 class Task
 {
-	unsigned _pid;
+	IWbemClassObjectPtr _reportedNotification;
+	bool shouldReport(IWbemClassObject & notification);
 public:
-	Task(unsigned pid);
-	virtual ~Task(void);
-	unsigned pid() const {return _pid;}
+	typedef long Pid;
+	
+	bool notify(IWbemClassObject & object);
+
+	static Pid extractPid(IWbemClassObject & notification);
 };
 
+///Determines if notifcation is interesting
+class Tasks {
+	std::map<Task::Pid, Task> _tasks;
+public:
+	bool notify(IWbemClassObject & object);
+};

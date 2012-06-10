@@ -2,14 +2,18 @@
 
 
 #include <memory>
-
+#include <map>
 
 #include <comip.h>
 #include <comdef.h>
 
+	
+
+#include <conio.h>
+
 #include "EventSink.h"
 #include "ComError.h"
-
+#include "Task.h"
 
 using namespace std;
 
@@ -48,22 +52,22 @@ _COM_SMARTPTR_TYPEDEF(EventSink,           __uuidof(IWbemObjectSink)); //Incorre
 
 IWbemServicesPtr connectToWmiServices() {
 	// Step 3: ---------------------------------------------------
-    // Obtain the initial locator to WMI -------------------------
+	// Obtain the initial locator to WMI -------------------------
 
-    IWbemLocatorPtr locator(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER);
+	IWbemLocatorPtr locator(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER);
 
 	if (!locator) {
 		throw runtime_error("Failed to obtain WMI locator");
 	}
 
 	// Step 4: ---------------------------------------------------
-    // Connect to WMI through the IWbemLocator::ConnectServer method
+	// Connect to WMI through the IWbemLocator::ConnectServer method
 
 	IWbemServicesPtr services;
 	{
 
 		IWbemServices *pSvc = NULL;
-	
+
 		// Connect to the local root\cimv2 namespace
 		// and obtain pointer pSvc to make IWbemServices calls.
 		HRESULT hres = locator->ConnectServer(
@@ -75,17 +79,17 @@ IWbemServicesPtr connectToWmiServices() {
 			0, 
 			0, 
 			&pSvc
-		);
+			);
 		ComError::handle(hres, "Failed to connect to local root\\cimv2 namespace");
 		services.Attach(pSvc);
 	}
-	    
-
-    cout << "Connected to ROOT\\CIMV2 WMI namespace" << endl;
 
 
-    // Step 5: --------------------------------------------------
-    // Set security levels on the proxy -------------------------
+	cout << "Connected to ROOT\\CIMV2 WMI namespace" << endl;
+
+
+	// Step 5: --------------------------------------------------
+	// Set security levels on the proxy -------------------------
 	{
 		HRESULT hres = CoSetProxyBlanket(
 			services,  // Indicates the proxy to set
@@ -96,7 +100,7 @@ IWbemServicesPtr connectToWmiServices() {
 			RPC_C_IMP_LEVEL_IMPERSONATE, // RPC_C_IMP_LEVEL_xxx
 			NULL,                        // client identity
 			EOAC_NONE                    // proxy capabilities 
-		);
+			);
 		ComError::handle(hres, "Failed to configure proxy security");
 	}
 	return services;
@@ -133,22 +137,22 @@ class Query {
 public:
 	Query(IWbemServices & services, IWbemObjectSink & sink, const _bstr_t & query):
 	  _services(&services, true),
-	  _sink(&sink, true)
-	{
-		HRESULT hres = services.ExecNotificationQueryAsync(
-			_bstr_t("WQL"),
-			_bstr_t(query),
-			WBEM_FLAG_SEND_STATUS,
-			NULL,
-			&sink);
-		ComError::handleWithErrorInfo(hres, string("Failed to perform async query: ")+static_cast<char*>(query), &services);
-	}
-	void cancel() {
-		_services->CancelAsyncCall(_sink);
-	}
-	~Query() {
-		cancel();
-	}
+		  _sink(&sink, true)
+	  {
+		  HRESULT hres = services.ExecNotificationQueryAsync(
+			  _bstr_t("WQL"),
+			  query,
+			  WBEM_FLAG_SEND_STATUS,
+			  NULL,
+			  &sink);
+		  ComError::handleWithErrorInfo(hres, string("Failed to perform async query: ")+static_cast<char*>(query), &services);
+	  }
+	  void cancel() {
+		  _services->CancelAsyncCall(_sink);
+	  }
+	  ~Query() {
+		  cancel();
+	  }
 };
 
 unique_ptr<Query> notificationQuery(IWbemServices & services, const _bstr_t & query, IWbemObjectSink & sink)
@@ -172,25 +176,36 @@ int _tmain(int argc, _TCHAR* argv[])
 {
 
 	// Step 1: --------------------------------------------------
-    // Initialize COM. ------------------------------------------
+	// Initialize COM. ------------------------------------------
 	ComInitializer comInitializer;
 	IWbemServicesPtr services = connectToWmiServices();
 	UnsecuredAppartment appartment;
 
-    // Step 6: -------------------------------------------------
-    // Receive event notifications -----------------------------
+	Tasks tasks;
 
-		
+	// Step 6: -------------------------------------------------
+	// Receive event notifications -----------------------------
+
+	wcout.imbue(locale("Russian"));
 	EventSink * pSink = new EventSink;
 	IWbemObjectSinkPtr sink(pSink, true);
-	pSink->addListener([](IWbemClassObject * x) {
-		wcout << *x << endl;
+	pSink->addListener([&](IWbemClassObject * x) {
+		if (!x)
+			return;
+		try {
+			if (tasks.notify(*x))
+				wcout << *x << endl;
+		}catch (exception & e) {
+			cerr << e.what() << endl;
+		}
 	});
 	sink = appartment.wrap(sink);
+
 	unique_ptr<Query> query1 = notificationQueryForType(services, "__InstanceCreationEvent", sink);
 	unique_ptr<Query> query2 = notificationQueryForType(services, "__InstanceDeletionEvent", sink);
 	unique_ptr<Query> query3 = notificationQueryForType(services, "__InstanceModificationEvent", sink);
-	Sleep(10000);
+	
+	_getwch();
 
 	return 0;
 }

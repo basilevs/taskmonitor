@@ -33,6 +33,7 @@ public:
 
 };
 
+//Returns a smart pointer to requested interface
 template<class T>
 T query(IUnknown & source) {
 	void * out = 0;
