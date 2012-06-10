@@ -19,8 +19,6 @@ string toConsoleEncoding(const wstring & input) {
 	enum {BUFFER_SIZE = 1000};
 	char buffer[BUFFER_SIZE];
 	int count = WideCharToMultiByte(GetConsoleOutputCP(), 0, input.c_str(), input.size(), buffer, BUFFER_SIZE-1, 0, 0);
-	assert(count >= 0);
-	assert(count < BUFFER_SIZE);
 	buffer[count] = 0;
 	return buffer;
 }

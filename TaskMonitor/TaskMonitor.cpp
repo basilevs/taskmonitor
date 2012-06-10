@@ -7,7 +7,6 @@
 
 #include <memory>
 
-#include <comip.h>
 #include <comdef.h>
 
 
@@ -204,9 +203,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	});
 	sink = appartment.wrap(sink);
 
-	unique_ptr<Query> query1 = notificationQueryForType(services, "__InstanceCreationEvent", sink);
-	unique_ptr<Query> query2 = notificationQueryForType(services, "__InstanceDeletionEvent", sink);
-	unique_ptr<Query> query3 = notificationQueryForType(services, "__InstanceModificationEvent", sink);
+	unique_ptr<Query> query1 = notificationQueryForType(services, "__InstanceOperationEvent", sink);
 
 	_getwch();
 	}

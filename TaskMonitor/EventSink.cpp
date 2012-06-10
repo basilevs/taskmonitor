@@ -30,11 +30,16 @@ HRESULT EventSink::Indicate(long lObjectCount,
     IWbemClassObject **apObjArray)
 {
 	HRESULT hres = S_OK;
-
+	if (bDone)
+		return WBEM_S_NO_ERROR;
     for (int i = 0; i < lObjectCount; i++)
     {
-		for each (const Listener & listener in _listeners)
+		for each (const Listener & listener in _listeners) {
+			if (bDone)
+				break;
+			IUnknownPtr guard(apObjArray[i]);
 			listener(apObjArray[i]);
+		}
     }
 
     return WBEM_S_NO_ERROR;
@@ -50,6 +55,7 @@ HRESULT EventSink::SetStatus(
     if(lFlags == WBEM_STATUS_COMPLETE)
     {
         printf("Call complete. hResult = 0x%X\n", hResult);
+		bDone = true;
     }
     else if(lFlags == WBEM_STATUS_PROGRESS)
     {

@@ -9,12 +9,11 @@ class EventSink: public IWbemObjectSink
 {
 public:
 	ULONG _refCount;
-    bool bDone;
+    volatile bool bDone;
 
 public:
 	typedef std::function<void(IWbemClassObject *)> Listener;
-    EventSink() { _refCount = 0; }
-   ~EventSink() { bDone = true; }
+    EventSink() { _refCount = 0; bDone = false;}
 
     virtual ULONG STDMETHODCALLTYPE AddRef();
     virtual ULONG STDMETHODCALLTYPE Release();        

@@ -12,5 +12,8 @@
 #include <iostream>
 #include <sstream>
 
+#include <comip.h>
+#include <comdef.h>
+
 
 // TODO: reference additional headers your program requires here
