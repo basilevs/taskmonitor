@@ -34,10 +34,13 @@ HRESULT EventSink::Indicate(long lObjectCount,
 		return WBEM_S_NO_ERROR;
     for (int i = 0; i < lObjectCount; i++)
     {
+		//Unfortunately COM object structure get distorted on exit and exceptions are raisen.
+		//We can't really prevent this from happening without proper synchronization with EventSink::SetStatus
+		if (bDone) 
+			return WBEM_S_NO_ERROR; 
 		for each (const Listener & listener in _listeners) {
 			if (bDone)
-				break;
-			IUnknownPtr guard(apObjArray[i]);
+				return WBEM_S_NO_ERROR;
 			listener(apObjArray[i]);
 		}
     }
@@ -59,6 +62,7 @@ HRESULT EventSink::SetStatus(
     }
     else if(lFlags == WBEM_STATUS_PROGRESS)
     {
+		bDone = false;
         printf("Call in progress.\n");
     }
 

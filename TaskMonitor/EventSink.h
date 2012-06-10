@@ -7,10 +7,8 @@
 
 class EventSink: public IWbemObjectSink
 {
-public:
 	ULONG _refCount;
     volatile bool bDone;
-
 public:
 	typedef std::function<void(IWbemClassObject *)> Listener;
     EventSink() { _refCount = 0; bDone = false;}
