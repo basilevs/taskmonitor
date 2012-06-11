@@ -151,6 +151,7 @@ public:
 	  }
 	  void cancel() {
 		  _services->CancelAsyncCall(_sink);
+		  _sink->SetStatus(0, WBEM_STATUS_COMPLETE, 0, 0); //Synchronizing.
 	  }
 	  ~Query() {
 		  cancel();

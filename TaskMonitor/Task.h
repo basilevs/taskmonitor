@@ -20,9 +20,10 @@ public:
 	static Pid extractPid(IWbemClassObject & notification);
 };
 
-///Determines if notifcation is interesting
+///Determines if notification is interesting
 class Tasks {
 	std::map<Task::Pid, Task> _tasks;
 public:
 	bool notify(IWbemClassObject & object);
+	
 };

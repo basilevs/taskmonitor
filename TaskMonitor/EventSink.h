@@ -4,15 +4,16 @@
 #include <functional>
 #include <Wbemidl.h>
 # pragma comment(lib, "wbemuuid.lib")
+#include "mutex.h"
 
 class EventSink: public IWbemObjectSink
 {
 	ULONG _refCount;
-    volatile bool bDone;
+    mutex _mutex;
+	bool bDone;
 public:
 	typedef std::function<void(IWbemClassObject *)> Listener;
     EventSink() { _refCount = 0; bDone = false;}
-
     virtual ULONG STDMETHODCALLTYPE AddRef();
     virtual ULONG STDMETHODCALLTYPE Release();        
     virtual HRESULT 

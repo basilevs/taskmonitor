@@ -29,15 +29,11 @@ HRESULT EventSink::QueryInterface(REFIID riid, void** ppv)
 HRESULT EventSink::Indicate(long lObjectCount,
     IWbemClassObject **apObjArray)
 {
-	HRESULT hres = S_OK;
+	mutex::scoped_lock lock(_mutex);
 	if (bDone)
 		return WBEM_S_NO_ERROR;
     for (int i = 0; i < lObjectCount; i++)
     {
-		//Unfortunately COM object structure get distorted on exit and exceptions are raisen.
-		//We can't really prevent this from happening without proper synchronization with EventSink::SetStatus
-		if (bDone) 
-			return WBEM_S_NO_ERROR; 
 		for each (const Listener & listener in _listeners) {
 			if (bDone)
 				return WBEM_S_NO_ERROR;
@@ -55,6 +51,7 @@ HRESULT EventSink::SetStatus(
             /* [in] */ IWbemClassObject __RPC_FAR *pObjParam
         )
 {
+	mutex::scoped_lock lock(_mutex);
     if(lFlags == WBEM_STATUS_COMPLETE)
     {
         printf("Call complete. hResult = 0x%X\n", hResult);
