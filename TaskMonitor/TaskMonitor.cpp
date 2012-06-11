@@ -18,6 +18,7 @@
 #include "Task.h"
 
 using namespace std;
+using namespace boost;
 
 class ComInitializer {
 public:
@@ -136,7 +137,10 @@ public:
 class Query {
 	IWbemServicesPtr _services;
 	IWbemObjectSinkPtr _sink;
+	Query(const Query &);
+	Query & operator=(const Query &);
 public:
+
 	Query(IWbemServices & services, IWbemObjectSink & sink, const _bstr_t & query):
 	  _services(&services, true),
 		  _sink(&sink, true)
@@ -175,32 +179,60 @@ wostream & operator <<(wostream & ostr, IWbemClassObject & object) {
 	return ostr;
 }
 
+class VirtualSizeChanges: public Tasks {
+	virtual bool shouldReport(Event e, const Task & oldState, const Task & newState) {
+		if (e == CREATED || e == DELETED)
+			return true;
+		if (e == CHANGED) {
+			if (std::abs(oldState.virtualSize() - newState.virtualSize()) > 1024*1024)
+				return true;
+		}
+		return false;
+	}
+};
+
+
+
+wostream & operator <<(wostream & ostr, const Task & task) {
+	return ostr << dec << (int)task.processId() << L" " << task.virtualSize();
+}
+
+wostream & operator <<(wostream & ostr, Tasks::Event e) {
+	switch(e) {
+		case Tasks::CREATED: return ostr << L"Created";
+		case Tasks::CHANGED: return ostr << L"Changed";
+		case Tasks::DELETED: return ostr << L"Deleted";
+		default: return ostr << L"Unknown";
+	}
+}
+
 int _tmain(int argc, _TCHAR* argv[])
 {
-	{
+	{ // Memory leak detection
+	wstring logFileName = L"taskmonitor.log";
 	// Step 1: --------------------------------------------------
 	// Initialize COM. ------------------------------------------
 	ComInitializer comInitializer;
 	IWbemServicesPtr services = connectToWmiServices();
 	UnsecuredAppartment appartment;
 
-	Tasks tasks;
+	VirtualSizeChanges tasks;
+	tasks.listeners.connect([](Tasks::Event e, const Task& task){
+		wcout << task.name() << L" " << e << L" " << task << endl;
+	});
 
 	// Step 6: -------------------------------------------------
 	// Receive event notifications -----------------------------
-
-	wcout.imbue(locale("Russian"));
+	locale l(".866"); 
+	l = locale(l, &use_facet<numpunct<wchar_t> >(locale("C"))); //Remove decimal separator. It is corrupted in console for this locale anyway.
+	wcout.imbue(l);
 	EventSink * pSink = new EventSink;
 	IWbemObjectSinkPtr sink(pSink, true);
-	pSink->addListener([&](IWbemClassObject * x) {
+	signals2::scoped_connection sinkToTasksConnection = pSink->listeners.connect([&](IWbemClassObject * x) {
 		if (!x)
 			return;
-		try {
-			if (tasks.notify(*x))
-				wcout << *x << endl;
-		}catch (exception & e) {
-			cerr << e.what() << endl;
-		}
+		tasks.notify(*x);
+//		wcout << *x << endl;
 	});
 	sink = appartment.wrap(sink);
 

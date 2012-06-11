@@ -1,19 +1,16 @@
 #pragma once
-#include <memory>
-#include <vector>
-#include <functional>
 #include <Wbemidl.h>
 # pragma comment(lib, "wbemuuid.lib")
-#include "mutex.h"
+
+#include <boost/signals2/signal.hpp>
+#include <boost/thread/mutex.hpp>
 
 class EventSink: public IWbemObjectSink
 {
+	boost::mutex _mutex;
 	ULONG _refCount;
-    mutex _mutex;
-	bool bDone;
 public:
-	typedef std::function<void(IWbemClassObject *)> Listener;
-    EventSink() { _refCount = 0; bDone = false;}
+    EventSink() { _refCount = 0;}
     virtual ULONG STDMETHODCALLTYPE AddRef();
     virtual ULONG STDMETHODCALLTYPE Release();        
     virtual HRESULT 
@@ -30,9 +27,7 @@ public:
             /* [in] */ BSTR strParam,
             /* [in] */ IWbemClassObject __RPC_FAR *pObjParam
             );
-	void addListener(const Listener & listener) {_listeners.push_back(listener);}
-private:
-	std::vector<Listener> _listeners; //boost::signal2 is better
+	boost::signals2::signal<void(IWbemClassObject *)> listeners;
 };
 
 

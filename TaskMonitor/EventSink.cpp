@@ -1,6 +1,8 @@
 #include "StdAfx.h"
 #include "EventSink.h"
 
+
+using namespace boost;
 ULONG EventSink::AddRef()
 {
     return InterlockedIncrement(&_refCount);
@@ -29,16 +31,9 @@ HRESULT EventSink::QueryInterface(REFIID riid, void** ppv)
 HRESULT EventSink::Indicate(long lObjectCount,
     IWbemClassObject **apObjArray)
 {
-	mutex::scoped_lock lock(_mutex);
-	if (bDone)
-		return WBEM_S_NO_ERROR;
     for (int i = 0; i < lObjectCount; i++)
     {
-		for each (const Listener & listener in _listeners) {
-			if (bDone)
-				return WBEM_S_NO_ERROR;
-			listener(apObjArray[i]);
-		}
+		listeners(apObjArray[i]);
     }
 
     return WBEM_S_NO_ERROR;
@@ -51,16 +46,13 @@ HRESULT EventSink::SetStatus(
             /* [in] */ IWbemClassObject __RPC_FAR *pObjParam
         )
 {
-	mutex::scoped_lock lock(_mutex);
     if(lFlags == WBEM_STATUS_COMPLETE)
     {
         printf("Call complete. hResult = 0x%X\n", hResult);
-		bDone = true;
     }
     else if(lFlags == WBEM_STATUS_PROGRESS)
     {
-		bDone = false;
-        printf("Call in progress.\n");
+		printf("Call in progess. hResult = 0x%X\n", hResult);
     }
 
     return WBEM_S_NO_ERROR;
