@@ -38,7 +38,7 @@ class Tasks: public boost::noncopyable {
 	void run();
 public:
 	Tasks();
-	~Tasks();
+	virtual ~Tasks();
 	typedef std::function<void(const Task &)> Listener;
 	void notify(IWbemClassObject & object);
 	enum Event {CREATED, DELETED, CHANGED};
