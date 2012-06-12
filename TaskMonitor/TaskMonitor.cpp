@@ -6,11 +6,11 @@
 #include <crtdbg.h>
 
 #include <memory>
+#include <fstream>
+#include <boost/algorithm/string/join.hpp>
+
 
 #include <comdef.h>
-
-
-
 #include <conio.h>
 
 #include "EventSink.h"
@@ -151,7 +151,7 @@ public:
 			  WBEM_FLAG_SEND_STATUS,
 			  NULL,
 			  &sink);
-		  ComError::handleWithErrorInfo(hres, string("Failed to perform async query: ")+static_cast<char*>(query), &services);
+		  ComError::handleWithErrorInfo(hres, toConsoleEncoding(wstring(L"Failed to perform async query: ")+static_cast<wchar_t*>(query)), &services);
 	  }
 	  void cancel() {
 		  _services->CancelAsyncCall(_sink);
@@ -167,8 +167,15 @@ unique_ptr<Query> notificationQuery(IWbemServices & services, const _bstr_t & qu
 	return unique_ptr<Query>(new Query(services, sink, query));
 }
 
-unique_ptr<Query> notificationQueryForType(IWbemServices & services, const _bstr_t & type, IWbemObjectSink & sink) {
-	return notificationQuery(services, _bstr_t("SELECT * FROM ") + type + _bstr_t(" WITHIN 1 WHERE TargetInstance ISA 'Win32_Process'"), sink);
+unique_ptr<Query> notificationQueryForProcesses(IWbemServices & services, IWbemObjectSink & sink, const vector<wstring> & names) {
+	wostringstream temp;
+	temp << L"SELECT * FROM __InstanceOperationEvent WITHIN 1 WHERE TargetInstance ISA 'Win32_Process'";
+	if (names.size() >0) {
+		temp << L" AND (TargetInstance.Name='";
+		temp << algorithm::join(names, L"' OR TargetInstance.Name='");
+		temp <<  L"')";
+	}
+	return notificationQuery(services, _bstr_t(temp.str().c_str()), sink);
 }
 
 wostream & operator <<(wostream & ostr, IWbemClassObject & object) {
@@ -208,8 +215,33 @@ wostream & operator <<(wostream & ostr, Tasks::Event e) {
 
 int _tmain(int argc, _TCHAR* argv[])
 {
-	{ // Memory leak detection
+	try { 
 	wstring logFileName = L"taskmonitor.log";
+	vector<wstring> processNames;
+	unique_ptr<wostream> fout;
+	if (argc > 1) {
+		logFileName = argv[argc-1];
+		processNames.insert(processNames.begin(), argv+1, argv+argc-1);
+	}
+	try {
+		fout.reset(new wofstream(logFileName));
+		ostringstream encodingString;
+		encodingString<< "." << GetACP();
+		locale logLocale(encodingString.str()); 
+		logLocale = locale(logLocale, &use_facet<numpunct<wchar_t> >(locale("C"))); //Remove decimal separator.
+		fout->imbue(logLocale);
+	} catch (std::exception & e) {
+		cerr << " Failed to open file" << toConsoleEncoding(logFileName) << ": " << e.what() << endl;
+	}
+
+	{
+		ostringstream encodingString;
+		encodingString<< "." << GetConsoleOutputCP();
+		locale consoleLocale(encodingString.str());
+		consoleLocale = locale(consoleLocale, &use_facet<numpunct<wchar_t> >(locale("C"))); //Remove decimal separator.
+		wcout.imbue(consoleLocale);
+	}
+
 	// Step 1: --------------------------------------------------
 	// Initialize COM. ------------------------------------------
 	ComInitializer comInitializer;
@@ -217,15 +249,15 @@ int _tmain(int argc, _TCHAR* argv[])
 	UnsecuredAppartment appartment;
 
 	VirtualSizeChanges tasks;
-	tasks.listeners.connect([](Tasks::Event e, const Task& task){
+	tasks.listeners.connect([&](Tasks::Event e, const Task& task){
 		wcout << task.name() << L" " << e << L" " << task << endl;
+		if (fout.get()) {
+			*fout << task.name() << L" " << e << L" " << task << endl;
+		}
 	});
 
 	// Step 6: -------------------------------------------------
 	// Receive event notifications -----------------------------
-	locale l(".866"); 
-	l = locale(l, &use_facet<numpunct<wchar_t> >(locale("C"))); //Remove decimal separator. It is corrupted in console for this locale anyway.
-	wcout.imbue(l);
 	EventSink * pSink = new EventSink;
 	IWbemObjectSinkPtr sink(pSink, true);
 	signals2::scoped_connection sinkToTasksConnection = pSink->listeners.connect([&](IWbemClassObject * x) {
@@ -236,9 +268,11 @@ int _tmain(int argc, _TCHAR* argv[])
 	});
 	sink = appartment.wrap(sink);
 
-	unique_ptr<Query> query1 = notificationQueryForType(services, "__InstanceOperationEvent", sink);
+	unique_ptr<Query> query1 = notificationQueryForProcesses(services,  sink, processNames);
 
 	_getwch();
+	} catch (std::exception & e) {
+		cerr << e.what() << endl;
 	}
 	_CrtDumpMemoryLeaks();
 	return 0;
