@@ -9,8 +9,6 @@
 #include <fstream>
 #include <boost/algorithm/string/join.hpp>
 
-
-#include <comdef.h>
 #include <conio.h>
 
 #include "EventSink.h"
@@ -68,9 +66,6 @@ IWbemServicesPtr connectToWmiServices() {
 
 	IWbemServicesPtr services;
 	{
-
-		IWbemServices *pSvc = NULL;
-
 		// Connect to the local root\cimv2 namespace
 		// and obtain pointer pSvc to make IWbemServices calls.
 		HRESULT hres = locator->ConnectServer(
@@ -81,15 +76,10 @@ IWbemServicesPtr connectToWmiServices() {
 			NULL, 
 			0, 
 			0, 
-			&pSvc
+			&services
 			);
 		ComError::handle(hres, "Failed to connect to local root\\cimv2 namespace");
-		services.Attach(pSvc);
 	}
-
-
-	cout << "Connected to ROOT\\CIMV2 WMI namespace" << endl;
-
 
 	// Step 5: --------------------------------------------------
 	// Set security levels on the proxy -------------------------
@@ -216,61 +206,61 @@ wostream & operator <<(wostream & ostr, Tasks::Event e) {
 int _tmain(int argc, _TCHAR* argv[])
 {
 	try { 
-	wstring logFileName = L"taskmonitor.log";
-	vector<wstring> processNames;
-	unique_ptr<wostream> fout;
-	if (argc > 1) {
-		logFileName = argv[argc-1];
-		processNames.insert(processNames.begin(), argv+1, argv+argc-1);
-	}
-	try {
-		fout.reset(new wofstream(logFileName));
-		ostringstream encodingString;
-		encodingString<< "." << GetACP();
-		locale logLocale(encodingString.str()); 
-		logLocale = locale(logLocale, &use_facet<numpunct<wchar_t> >(locale("C"))); //Remove decimal separator.
-		fout->imbue(logLocale);
-	} catch (std::exception & e) {
-		cerr << " Failed to open file" << toConsoleEncoding(logFileName) << ": " << e.what() << endl;
-	}
-
-	{
-		ostringstream encodingString;
-		encodingString<< "." << GetConsoleOutputCP();
-		locale consoleLocale(encodingString.str());
-		consoleLocale = locale(consoleLocale, &use_facet<numpunct<wchar_t> >(locale("C"))); //Remove decimal separator.
-		wcout.imbue(consoleLocale);
-	}
-
-	// Step 1: --------------------------------------------------
-	// Initialize COM. ------------------------------------------
-	ComInitializer comInitializer;
-	IWbemServicesPtr services = connectToWmiServices();
-	UnsecuredAppartment appartment;
-
-	VirtualSizeChanges tasks;
-	tasks.listeners.connect([&](Tasks::Event e, const Task& task){
-		wcout << task.name() << L" " << e << L" " << task << endl;
-		if (fout.get()) {
-			*fout << task.name() << L" " << e << L" " << task << endl;
+		wstring logFileName = L"taskmonitor.log";
+		vector<wstring> processNames;
+		unique_ptr<wostream> fout;
+		if (argc > 1) {
+			logFileName = argv[argc-1];
+			processNames.insert(processNames.begin(), argv+1, argv+argc-1);
 		}
-	});
+		try {
+			fout.reset(new wofstream(logFileName));
+			ostringstream encodingString;
+			encodingString<< "." << GetACP();
+			locale logLocale(encodingString.str()); 
+			logLocale = locale(logLocale, &use_facet<numpunct<wchar_t> >(locale("C"))); //Remove decimal separator.
+			fout->imbue(logLocale);
+		} catch (std::exception & e) {
+			cerr << " Failed to open file" << toConsoleEncoding(logFileName) << ": " << e.what() << endl;
+		}
 
-	// Step 6: -------------------------------------------------
-	// Receive event notifications -----------------------------
-	EventSink * pSink = new EventSink;
-	IWbemObjectSinkPtr sink(pSink, true);
-	signals2::scoped_connection sinkToTasksConnection = pSink->listeners.connect([&](IWbemClassObject * x) {
-		if (!x)
-			return;
-		tasks.notify(*x);
-//		wcout << *x << endl;
-	});
-	sink = appartment.wrap(sink);
+		{
+			ostringstream encodingString;
+			encodingString<< "." << GetConsoleOutputCP();
+			locale consoleLocale(encodingString.str());
+			consoleLocale = locale(consoleLocale, &use_facet<numpunct<wchar_t> >(locale("C"))); //Remove decimal separator.
+			wcout.imbue(consoleLocale);
+		}
 
-	unique_ptr<Query> query1 = notificationQueryForProcesses(services,  sink, processNames);
+		// Step 1: --------------------------------------------------
+		// Initialize COM. ------------------------------------------
+		ComInitializer comInitializer;
+		IWbemServicesPtr services = connectToWmiServices();
+		UnsecuredAppartment appartment;
 
-	_getwch();
+		VirtualSizeChanges tasks;
+		tasks.listeners.connect([&](Tasks::Event e, const Task& task){
+			wcout << task.name() << L" " << e << L" " << task << endl;
+			if (fout.get()) {
+				*fout << task.name() << L" " << e << L" " << task << endl;
+			}
+		});
+
+		// Step 6: -------------------------------------------------
+		// Receive event notifications -----------------------------
+		EventSink * pSink = new EventSink;
+		IWbemObjectSinkPtr sink(pSink, true);
+		signals2::scoped_connection sinkToTasksConnection = pSink->listeners.connect([&](IWbemClassObject * x) {
+			if (!x)
+				return;
+			tasks.notify(*x);
+	//		wcout << *x << endl;
+		});
+		sink = appartment.wrap(sink);
+
+		unique_ptr<Query> query1 = notificationQueryForProcesses(services,  sink, processNames);
+
+		_getwch();
 	} catch (std::exception & e) {
 		cerr << e.what() << endl;
 	}
