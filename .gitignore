@@ -19,3 +19,4 @@ ipch
 *.suo
 Release
 TaskMonitor/taskmonitor.log
+TaskMonitor/tm.log

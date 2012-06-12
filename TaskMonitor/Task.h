@@ -28,7 +28,7 @@ public:
 };
 
 // Determines if notification is interesting
-class Tasks: boost::noncopyable {
+class Tasks: public boost::noncopyable {
 	std::map<Task::Pid, Task> _tasks;
 	std::queue<IWbemClassObjectPtr> _queue;
 	std::unique_ptr<boost::thread> _thread;

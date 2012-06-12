@@ -14,6 +14,7 @@
 #include "EventSink.h"
 #include "ComError.h"
 #include "Task.h"
+#include "WmiTools.h"
 
 using namespace std;
 using namespace boost;
@@ -45,60 +46,6 @@ public:
 	}
 };
 
-_COM_SMARTPTR_TYPEDEF(IWbemLocator,        __uuidof(IWbemLocator));
-_COM_SMARTPTR_TYPEDEF(IWbemServices,       __uuidof(IWbemServices));
-_COM_SMARTPTR_TYPEDEF(IUnsecuredApartment, __uuidof(IUnsecuredApartment));
-_COM_SMARTPTR_TYPEDEF(IWbemObjectSink,     __uuidof(IWbemObjectSink));
-_COM_SMARTPTR_TYPEDEF(EventSink,           __uuidof(IWbemObjectSink)); //Incorrect. Do not instantiate internally.
-
-IWbemServicesPtr connectToWmiServices() {
-	// Step 3: ---------------------------------------------------
-	// Obtain the initial locator to WMI -------------------------
-
-	IWbemLocatorPtr locator(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER);
-
-	if (!locator) {
-		throw runtime_error("Failed to obtain WMI locator");
-	}
-
-	// Step 4: ---------------------------------------------------
-	// Connect to WMI through the IWbemLocator::ConnectServer method
-
-	IWbemServicesPtr services;
-	{
-		// Connect to the local root\cimv2 namespace
-		// and obtain pointer pSvc to make IWbemServices calls.
-		HRESULT hres = locator->ConnectServer(
-			_T("ROOT\\CIMV2"), 
-			NULL,
-			NULL, 
-			0, 
-			NULL, 
-			0, 
-			0, 
-			&services
-			);
-		ComError::handle(hres, "Failed to connect to local root\\cimv2 namespace");
-	}
-
-	// Step 5: --------------------------------------------------
-	// Set security levels on the proxy -------------------------
-	{
-		HRESULT hres = CoSetProxyBlanket(
-			services,  // Indicates the proxy to set
-			RPC_C_AUTHN_WINNT,           // RPC_C_AUTHN_xxx 
-			RPC_C_AUTHZ_NONE,            // RPC_C_AUTHZ_xxx 
-			NULL,                        // Server principal name 
-			RPC_C_AUTHN_LEVEL_CALL,      // RPC_C_AUTHN_LEVEL_xxx 
-			RPC_C_IMP_LEVEL_IMPERSONATE, // RPC_C_IMP_LEVEL_xxx
-			NULL,                        // client identity
-			EOAC_NONE                    // proxy capabilities 
-			);
-		ComError::handle(hres, "Failed to configure proxy security");
-	}
-	return services;
-}
-
 class UnsecuredAppartment {
 	IUnsecuredApartmentPtr _appartment;
 public:
@@ -122,35 +69,6 @@ public:
 	}
 };
 
-//Controls query interruption for exception safety
-//We absolutely can't continue sending events to event handler that might reference local context, that is already out of scope.
-class Query {
-	IWbemServicesPtr _services;
-	IWbemObjectSinkPtr _sink;
-	Query(const Query &);
-	Query & operator=(const Query &);
-public:
-
-	Query(IWbemServices & services, IWbemObjectSink & sink, const _bstr_t & query):
-	  _services(&services, true),
-		  _sink(&sink, true)
-	  {
-		  HRESULT hres = services.ExecNotificationQueryAsync(
-			  _bstr_t("WQL"),
-			  query,
-			  WBEM_FLAG_SEND_STATUS,
-			  NULL,
-			  &sink);
-		  ComError::handleWithErrorInfo(hres, toConsoleEncoding(wstring(L"Failed to perform async query: ")+static_cast<wchar_t*>(query)), &services);
-	  }
-	  void cancel() {
-		  _services->CancelAsyncCall(_sink);
-		  _sink->SetStatus(0, WBEM_STATUS_COMPLETE, 0, 0); //Synchronizing.
-	  }
-	  ~Query() {
-		  cancel();
-	  }
-};
 
 unique_ptr<Query> notificationQuery(IWbemServices & services, const _bstr_t & query, IWbemObjectSink & sink)
 {
@@ -187,8 +105,6 @@ class VirtualSizeChanges: public Tasks {
 		return false;
 	}
 };
-
-
 
 wostream & operator <<(wostream & ostr, const Task & task) {
 	return ostr << dec << (int)task.processId() << L" " << task.virtualSize();
