@@ -156,8 +156,10 @@ int _tmain(int argc, _TCHAR* argv[])
 
 		VirtualSizeChanges tasks;
 		tasks.listeners.connect([&](Tasks::Event e, const Task& task){
+			wcout.clear(); //Exotic encoding (of ProcessName) may corrupt stream state.
 			wcout << task.name() << L" " << e << L" " << task << endl;
 			if (fout.get()) {
+				fcout->clear();
 				*fout << task.name() << L" " << e << L" " << task << endl;
 			}
 		});
