@@ -80,6 +80,8 @@ class VirtualSizeChanges: public Tasks {
 		if (e == CREATED || e == DELETED)
 			return true;
 		if (e == CHANGED) {
+			if(oldState.virtualSize() == 0)
+				return false;
 			if (std::abs(oldState.virtualSize() - newState.virtualSize()) > 1024*1024)
 				return true;
 		}
