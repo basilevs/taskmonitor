@@ -6,6 +6,7 @@
 #include <crtdbg.h>
 
 #include <memory>
+#include <iomanip>
 #include <fstream>
 #include <boost/algorithm/string/join.hpp>
 
@@ -90,7 +91,7 @@ class VirtualSizeChanges: public Tasks {
 };
 
 wostream & operator <<(wostream & ostr, const Task & task) {
-	return ostr << dec << (int)task.processId() << L" " << task.virtualSize();
+	return ostr << setw(6) << task.processId() << L" " << int(double(task.virtualSize())/1024/1024);
 }
 
 wostream & operator <<(wostream & ostr, Tasks::Event e) {
@@ -146,10 +147,10 @@ int _tmain(int argc, _TCHAR* argv[])
 		VirtualSizeChanges tasks;
 		tasks.listeners.connect([&](Tasks::Event e, const Task& task){
 			wcout.clear(); //Exotic encoding (of ProcessName) may corrupt stream state.
-			wcout << task.name() << L" " << e << L" " << task << endl;
+			wcout << left << setw(30) << task.name() << L" " << e << L" " << task << endl;
 			if (fout.get()) {
 				fout->clear();
-				*fout << task.name() << L" " << e << L" " << task << endl;
+				*fout << left << setw(30) << task.name() << L" " << e << L" " << task << endl;
 			}
 		});
 
