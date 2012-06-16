@@ -4,12 +4,11 @@
 #include <queue>
 #include <comdef.h>
 #include <comip.h>
-#include <Wbemidl.h>
 #include <boost/signals2/signal.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/condition.hpp>
 
-_COM_SMARTPTR_TYPEDEF(IWbemClassObject,     __uuidof(IWbemClassObject));
+#include "WmiTools.h"
 
 //Stores process state to determine if notifcation is interesting
 class Task

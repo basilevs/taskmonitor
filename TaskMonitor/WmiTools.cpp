@@ -52,22 +52,26 @@ IWbemServicesPtr connectToWmiServices() {
 	return services;
 }
 
-Query::Query(IWbemServices & services, IWbemObjectSink & sink, const _bstr_t & query):
-	_services(&services, true),
-		_sink(&sink, true)
+AsyncQueryHandle::AsyncQueryHandle(const IWbemServicesPtr & services, const IWbemObjectSinkPtr & sink, const _bstr_t & query):
+	_services(services, true),
+	_sink(sink, true)
 {
-	HRESULT hres = services.ExecNotificationQueryAsync(
+	HRESULT hres = _services->ExecNotificationQueryAsync(
 		_bstr_t("WQL"),
 		query,
 		WBEM_FLAG_SEND_STATUS,
 		NULL,
-		&sink);
-	ComError::handleWithErrorInfo(hres, toConsoleEncoding(wstring(L"Failed to perform async query: ")+static_cast<wchar_t*>(query)), &services);
+		_sink);
+	ComError::handleWithErrorInfo(hres, toConsoleEncoding(wstring(L"Failed to perform async query: ")+static_cast<wchar_t*>(query)), static_cast<IWbemServices*>(_services));
 }
-void Query::cancel() {
+void AsyncQueryHandle::cancel() {
 	_services->CancelAsyncCall(_sink);
 	_sink->SetStatus(0, WBEM_STATUS_COMPLETE, 0, 0); //Synchronizing.
 }
-Query::~Query() {
+AsyncQueryHandle::~AsyncQueryHandle() {
 	cancel();
+}
+
+AsyncWmiQuery::AsyncWmiQuery(const IWbemServicesPtr & services, const _bstr_t & query, std::function<void(IWbemClassObject * x)> callback)
+{
 }

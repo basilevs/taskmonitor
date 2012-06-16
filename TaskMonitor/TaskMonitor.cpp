@@ -69,13 +69,7 @@ public:
 	}
 };
 
-
-unique_ptr<Query> notificationQuery(IWbemServices & services, const _bstr_t & query, IWbemObjectSink & sink)
-{
-	return unique_ptr<Query>(new Query(services, sink, query));
-}
-
-unique_ptr<Query> notificationQueryForProcesses(IWbemServices & services, IWbemObjectSink & sink, const vector<wstring> & names) {
+static wstring buildQueryForProcesses(const vector<wstring> & names) {
 	wostringstream temp;
 	temp << L"SELECT * FROM __InstanceOperationEvent WITHIN 1 WHERE TargetInstance ISA 'Win32_Process'";
 	if (names.size() >0) {
@@ -83,8 +77,9 @@ unique_ptr<Query> notificationQueryForProcesses(IWbemServices & services, IWbemO
 		temp << algorithm::join(names, L"' OR TargetInstance.Name='");
 		temp <<  L"')";
 	}
-	return notificationQuery(services, _bstr_t(temp.str().c_str()), sink);
+	return temp.str();
 }
+
 
 wostream & operator <<(wostream & ostr, IWbemClassObject & object) {
 	BSTR text;
@@ -119,6 +114,36 @@ wostream & operator <<(wostream & ostr, Tasks::Event e) {
 	}
 }
 
+void asynchronousEventHandling(const IWbemServicesPtr & services, const wstring & query, std::function<void(IWbemClassObject * x)> callback) {
+	UnsecuredAppartment appartment;
+	// Step 6: -------------------------------------------------
+	// Receive event notifications -----------------------------
+	EventSink * pSink = new EventSink;
+	IWbemObjectSinkPtr sink(pSink, true);
+	signals2::scoped_connection sinkToTasksConnection = pSink->listeners.connect(callback);
+	sink = appartment.wrap(sink);
+	AsyncQueryHandle handle(services,  sink, query.c_str());
+	_getwch();
+}
+
+void semisynchronousEventHandling(const IWbemServicesPtr & services, const wstring & query, std::function<void(IWbemClassObject * x)> callback) {
+	IEnumWbemClassObjectPtr objects;
+	HRESULT hres = services->ExecNotificationQuery(_bstr_t("WQL"), _bstr_t(query.c_str()), WBEM_FLAG_FORWARD_ONLY|WBEM_FLAG_RETURN_IMMEDIATELY, 0, &objects);
+	ComError::handleWithErrorInfo(hres, "Synchronous WMI notification query failed.", services.GetInterfacePtr());
+	while(true) {
+		if (_kbhit())
+			break;
+		IWbemClassObjectPtr notification;
+		ULONG count = 0;
+		hres = objects->Next(100, 1, &notification, &count);
+		if (hres == WBEM_S_TIMEDOUT)
+			continue;
+		ComError::handleWithErrorInfo(hres, "Failed to get", static_cast<IWbemServices*>(services));
+		callback(notification.GetInterfacePtr());
+	}
+}
+
+
 int _tmain(int argc, _TCHAR* argv[])
 {
 	try { 
@@ -138,6 +163,7 @@ int _tmain(int argc, _TCHAR* argv[])
 			fout->imbue(logLocale);
 		} catch (std::exception & e) {
 			cerr << " Failed to open file" << toConsoleEncoding(logFileName) << ": " << e.what() << endl;
+			fout.reset();
 		}
 
 		{
@@ -148,37 +174,36 @@ int _tmain(int argc, _TCHAR* argv[])
 			wcout.imbue(consoleLocale);
 		}
 
+		wstring query = buildQueryForProcesses(processNames);
+
 		// Step 1: --------------------------------------------------
 		// Initialize COM. ------------------------------------------
 		ComInitializer comInitializer;
 		IWbemServicesPtr services = connectToWmiServices();
-		UnsecuredAppartment appartment;
 
 		VirtualSizeChanges tasks;
 		tasks.listeners.connect([&](Tasks::Event e, const Task& task){
 			wcout.clear(); //Exotic encoding (of ProcessName) may corrupt stream state.
 			wcout << task.name() << L" " << e << L" " << task << endl;
 			if (fout.get()) {
-				fcout->clear();
+				fout->clear();
 				*fout << task.name() << L" " << e << L" " << task << endl;
 			}
 		});
-
-		// Step 6: -------------------------------------------------
-		// Receive event notifications -----------------------------
-		EventSink * pSink = new EventSink;
-		IWbemObjectSinkPtr sink(pSink, true);
-		signals2::scoped_connection sinkToTasksConnection = pSink->listeners.connect([&](IWbemClassObject * x) {
+		auto notify = [&](IWbemClassObject * x) {
 			if (!x)
 				return;
 			tasks.notify(*x);
-	//		wcout << *x << endl;
-		});
-		sink = appartment.wrap(sink);
-
-		unique_ptr<Query> query1 = notificationQueryForProcesses(services,  sink, processNames);
-
-		_getwch();
+			//wcout << *x << endl;
+		};
+		
+		if (false) {
+			//Asynchrnonous unsecure event handling
+			asynchronousEventHandling(services, query, notify);
+		} else {
+			//Synchronous event streaming
+			semisynchronousEventHandling(services, query, notify);
+		}
 	} catch (std::exception & e) {
 		cerr << e.what() << endl;
 	}
