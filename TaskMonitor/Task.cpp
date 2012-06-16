@@ -116,40 +116,37 @@ long Task::virtualSize() const {
 
 Tasks::Tasks()
 {
-	_thread.reset(new thread(std::bind(std::mem_fn(&Tasks::run), this)));
+	_thread.reset(new InterruptingThread(std::bind(std::mem_fn(&Tasks::run), this)));
 }
 
-Tasks::~Tasks() {
-	_thread->interrupt();
-	_thread->join();
-}
+Tasks::~Tasks() {}
 
-void Tasks::notify(IWbemClassObject & notification) {
+void Tasks::notify(IWbemClassObject * notification) {
+	if (!notification)
+		return;
 	boost::mutex::scoped_lock lock(_mutex);
-	_queue.push(IWbemClassObjectPtr(&notification, true));
+	_queue.push(IWbemClassObjectPtr(notification, true));
 	_condition.notify_all();
 }
 
 void Tasks::run() {
-	try {
-		while(true) {
-			IWbemClassObjectPtr ptr;
-			{
-				boost::mutex::scoped_lock lock(_mutex);
-				//interruption point
-				_condition.wait(_mutex, std::bind(mem_fun(&queue<IWbemClassObjectPtr>::size), &_queue));
-				ptr = _queue.front();
-				_queue.pop();
-			}
-			if (ptr == 0)
-				continue;
-			try {
-				process(ptr);
-			} catch(std::exception & e) {
-				cerr << e.what() << endl;
-			}
+	while(true) {
+		IWbemClassObjectPtr ptr;
+		{
+			boost::mutex::scoped_lock lock(_mutex);
+			//interruption point
+			_condition.wait(_mutex, std::bind(mem_fun(&queue<IWbemClassObjectPtr>::size), &_queue));
+			ptr = _queue.front();
+			_queue.pop();
 		}
-	} catch (thread_interrupted&) {}
+		if (ptr == 0)
+			continue;
+		try {
+			process(ptr);
+		} catch(std::exception & e) {
+			cerr << e.what() << endl;
+		}
+	}
 }
 
 class BadEvent: public runtime_error {

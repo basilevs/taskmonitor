@@ -9,12 +9,13 @@
 #include <fstream>
 #include <boost/algorithm/string/join.hpp>
 
+
 #include <conio.h>
 
-#include "EventSink.h"
 #include "ComError.h"
 #include "Task.h"
 #include "WmiTools.h"
+#include "InterruptingThread.h"
 
 using namespace std;
 using namespace boost;
@@ -46,38 +47,23 @@ public:
 	}
 };
 
-class UnsecuredAppartment {
-	IUnsecuredApartmentPtr _appartment;
-public:
-	UnsecuredAppartment() {
-		_appartment.CreateInstance(CLSID_UnsecuredApartment, 0, CLSCTX_LOCAL_SERVER);
-		if (!_appartment) {
-			throw runtime_error("Failed to create UnsecuredApartment");
-		}
+static vector<wstring> buildQueryForProcesses(const vector<wstring> & names) {
+	const wstring commonPrefix = L"SELECT * FROM __InstanceOperationEvent WITHIN 1 WHERE TargetInstance ISA 'Win32_Process'";
+	vector<wstring> rv;
+	if (names.size() == 0) {
+		rv.push_back(commonPrefix);
+		return rv;
 	}
-	//Allows asynchronous callbacks bypass security settings
-	template<class T>
-	T wrap(T & input) {
-		IUnknown* pStubUnk = NULL;
-		//Many additional references to wrapped object are made here from another thread.
-		//This causes virtually infinite lifetime for wrapped object.
-		HRESULT hres = _appartment->CreateObjectStub(input, &pStubUnk); 
-		ComError::handle(hres, "Failed to enable unsecure callbacks");
-		IUnknownPtr unk(pStubUnk); // To free the reference returned by CreateObjectStub.
-		//Query adds another reference
-		return query<T>(unk);
+	rv.reserve(names.size());
+	// Many simultaneous queries are not efficient, but we produce heaps of them to maximize number of processing threads for educational purpose.
+	// To minimize number of queries we should just query for as much processes in one query as posssible (limited by maximum WMI query complexity).
+	for each (const wstring & name in names) {
+		wostringstream temp;
+		temp << commonPrefix;
+		temp << L" AND TargetInstance.Name='" << name << L"'";
+		rv.push_back(temp.str());
 	}
-};
-
-static wstring buildQueryForProcesses(const vector<wstring> & names) {
-	wostringstream temp;
-	temp << L"SELECT * FROM __InstanceOperationEvent WITHIN 1 WHERE TargetInstance ISA 'Win32_Process'";
-	if (names.size() >0) {
-		temp << L" AND (TargetInstance.Name='";
-		temp << algorithm::join(names, L"' OR TargetInstance.Name='");
-		temp <<  L"')";
-	}
-	return temp.str();
+	return rv;
 }
 
 
@@ -114,46 +100,21 @@ wostream & operator <<(wostream & ostr, Tasks::Event e) {
 	}
 }
 
-void asynchronousEventHandling(const IWbemServicesPtr & services, const wstring & query, std::function<void(IWbemClassObject * x)> callback) {
-	UnsecuredAppartment appartment;
-	// Step 6: -------------------------------------------------
-	// Receive event notifications -----------------------------
-	EventSink * pSink = new EventSink;
-	IWbemObjectSinkPtr sink(pSink, true);
-	signals2::scoped_connection sinkToTasksConnection = pSink->listeners.connect(callback);
-	sink = appartment.wrap(sink);
-	AsyncQueryHandle handle(services,  sink, query.c_str());
-	_getwch();
-}
-
-void semisynchronousEventHandling(const IWbemServicesPtr & services, const wstring & query, std::function<void(IWbemClassObject * x)> callback) {
-	IEnumWbemClassObjectPtr objects;
-	HRESULT hres = services->ExecNotificationQuery(_bstr_t("WQL"), _bstr_t(query.c_str()), WBEM_FLAG_FORWARD_ONLY|WBEM_FLAG_RETURN_IMMEDIATELY, 0, &objects);
-	ComError::handleWithErrorInfo(hres, "Synchronous WMI notification query failed.", services.GetInterfacePtr());
-	while(true) {
-		if (_kbhit())
-			break;
-		IWbemClassObjectPtr notification;
-		ULONG count = 0;
-		hres = objects->Next(100, 1, &notification, &count);
-		if (hres == WBEM_S_TIMEDOUT)
-			continue;
-		ComError::handleWithErrorInfo(hres, "Failed to get", static_cast<IWbemServices*>(services));
-		callback(notification.GetInterfacePtr());
-	}
-}
-
-
 int _tmain(int argc, _TCHAR* argv[])
 {
 	try { 
 		wstring logFileName = L"taskmonitor.log";
 		vector<wstring> processNames;
 		unique_ptr<wostream> fout;
+
+		//Process arguments
 		if (argc > 1) {
 			logFileName = argv[argc-1];
 			processNames.insert(processNames.begin(), argv+1, argv+argc-1);
 		}
+		vector<wstring> queries = buildQueryForProcesses(processNames);
+
+		//Configure output encodings
 		try {
 			fout.reset(new wofstream(logFileName));
 			ostringstream encodingString;
@@ -165,7 +126,6 @@ int _tmain(int argc, _TCHAR* argv[])
 			cerr << " Failed to open file" << toConsoleEncoding(logFileName) << ": " << e.what() << endl;
 			fout.reset();
 		}
-
 		{
 			ostringstream encodingString;
 			encodingString<< "." << GetConsoleOutputCP();
@@ -174,13 +134,13 @@ int _tmain(int argc, _TCHAR* argv[])
 			wcout.imbue(consoleLocale);
 		}
 
-		wstring query = buildQueryForProcesses(processNames);
 
 		// Step 1: --------------------------------------------------
 		// Initialize COM. ------------------------------------------
 		ComInitializer comInitializer;
 		IWbemServicesPtr services = connectToWmiServices();
 
+		//Create event filter and configure filtered events processing
 		VirtualSizeChanges tasks;
 		tasks.listeners.connect([&](Tasks::Event e, const Task& task){
 			wcout.clear(); //Exotic encoding (of ProcessName) may corrupt stream state.
@@ -190,19 +150,34 @@ int _tmain(int argc, _TCHAR* argv[])
 				*fout << task.name() << L" " << e << L" " << task << endl;
 			}
 		});
-		auto notify = [&](IWbemClassObject * x) {
-			if (!x)
-				return;
-			tasks.notify(*x);
-			//wcout << *x << endl;
+
+		auto callback = [&](IWbemClassObject * x) {
+			tasks.notify(x);
+			if (x && false)
+				wcout << *x << endl;
 		};
-		
-		if (false) {
-			//Asynchrnonous unsecure event handling
-			asynchronousEventHandling(services, query, notify);
+		const bool async = false;
+
+		if (async) {
+			//Asynchrnonous unsecured event handling
+			vector<unique_ptr<AsyncWmiQuery>> handles;
+			for each (wstring query in queries) {
+				handles.push_back(unique_ptr<AsyncWmiQuery>(new AsyncWmiQuery(services, query.c_str(), callback)));
+			}
+			_getwch();
 		} else {
-			//Synchronous event streaming
-			semisynchronousEventHandling(services, query, notify);
+			//Semisynchronous event streaming
+			vector<InterruptingThread> threads;
+			for each (const wstring & query in queries) {
+				threads.push_back(InterruptingThread([=](){
+					SemisyncWmiQuery swq(services, query.c_str());
+					while(true) {
+						callback(swq.next().GetInterfacePtr());
+						this_thread::interruption_point();
+					}
+				}));
+			}
+			_getwch();
 		}
 	} catch (std::exception & e) {
 		cerr << e.what() << endl;

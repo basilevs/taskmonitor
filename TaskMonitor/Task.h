@@ -7,6 +7,8 @@
 #include <boost/signals2/signal.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/condition.hpp>
+#include "InterruptingThread.h"
+
 
 #include "WmiTools.h"
 
@@ -30,7 +32,7 @@ public:
 class Tasks: public boost::noncopyable {
 	std::map<Task::Pid, Task> _tasks;
 	std::queue<IWbemClassObjectPtr> _queue;
-	std::unique_ptr<boost::thread> _thread;
+	std::unique_ptr<InterruptingThread> _thread;
 	boost::mutex _mutex;
 	boost::condition _condition;
 	void process(IWbemClassObject &);
@@ -39,7 +41,7 @@ public:
 	Tasks();
 	virtual ~Tasks();
 	typedef std::function<void(const Task &)> Listener;
-	void notify(IWbemClassObject & object);
+	void notify(IWbemClassObject * object);
 	enum Event {CREATED, DELETED, CHANGED};
 	virtual bool shouldReport(Event, const Task & oldState, const Task & newState) {
 		return true;
