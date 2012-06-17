@@ -117,9 +117,9 @@ SemisyncWmiQuery::SemisyncWmiQuery(const IWbemServicesPtr & services, const _bst
 
 IWbemClassObjectPtr SemisyncWmiQuery::next() {
 	ULONG count = 0;
-	IWbemClassObjectPtr notification;
-	HRESULT hres = _enumerator->Next(100, 1, &notification, &count);
+	IWbemClassObjectPtr rv;
+	HRESULT hres = _enumerator->Next(100, 1, &rv, &count);
 	if (hres != WBEM_S_TIMEDOUT)
 		ComError::handleWithErrorInfo(hres, "Failed to get next notification", _enumerator.GetInterfacePtr());
-	return notification;
+	return rv;
 }

@@ -116,6 +116,11 @@ long Task::virtualSize() const {
 
 Tasks::Tasks()
 {
+	// Processing is done in a separate thread, just to demostrate cross-thread message passing.
+	// Note, that we don't instantiate thread as class member, using smart pointer to initialize it inside constructor body.
+	// This is done to avoid syncronization object members acess before their instantiation.
+	// Actually this can also be achived by proper member ordering.
+	// Also we avoid using dangerous reference to 'this' during members construction.
 	_thread.reset(new InterruptingThread(std::bind(std::mem_fn(&Tasks::run), this)));
 }
 

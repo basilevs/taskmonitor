@@ -24,7 +24,7 @@ public:
 			handle(result, message);
 		} else {
 			IErrorInfoPtr error;
-			HRESULT hres = GetErrorInfo(0, &error); //Why this compiles?
+			HRESULT hres = GetErrorInfo(0, &error);
 			handle(hres, "Error handling failed");
 			_com_error data(result, error);
 			handle(data, message);

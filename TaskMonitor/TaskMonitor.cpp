@@ -21,6 +21,7 @@
 using namespace std;
 using namespace boost;
 
+//Initializes and deinitializes COM for the current scope
 class ComInitializer {
 public:
 	ComInitializer() {
@@ -48,6 +49,7 @@ public:
 	}
 };
 
+//Generates notification query strings to watch for given processes
 static vector<wstring> buildQueryForProcesses(const vector<wstring> & names) {
 	const wstring commonPrefix = L"SELECT * FROM __InstanceOperationEvent WITHIN 1 WHERE TargetInstance ISA 'Win32_Process'";
 	vector<wstring> rv;
@@ -67,7 +69,6 @@ static vector<wstring> buildQueryForProcesses(const vector<wstring> & names) {
 	return rv;
 }
 
-
 wostream & operator <<(wostream & ostr, IWbemClassObject & object) {
 	BSTR text;
 	ComError::handleWithErrorInfo(object.GetObjectText(0, &text), string("Failed to get object text"), &object);
@@ -76,14 +77,14 @@ wostream & operator <<(wostream & ostr, IWbemClassObject & object) {
 	return ostr;
 }
 
-class VirtualSizeChanges: public Tasks {
+class WorkingSetChanges: public Tasks {
 	virtual bool shouldReport(Event e, const Task & oldState, const Task & newState) {
 		if (e == CREATED || e == DELETED)
 			return true;
 		if (e == CHANGED) {
-			if(oldState.virtualSize() == 0)
+			if(oldState.workingSet() == 0)
 				return false;
-			if (std::abs(oldState.virtualSize() - newState.virtualSize()) > 1024*1024)
+			if (std::abs(oldState.workingSet() - newState.workingSet()) > 1024*1024)
 				return true;
 		}
 		return false;
@@ -91,7 +92,7 @@ class VirtualSizeChanges: public Tasks {
 };
 
 wostream & operator <<(wostream & ostr, const Task & task) {
-	return ostr << setw(6) << task.processId() << L" " << int(double(task.virtualSize())/1024/1024);
+	return ostr << setw(6) << task.processId() << L" " << int(double(task.workingSet())/1024/1024)<< L"M";
 }
 
 wostream & operator <<(wostream & ostr, Tasks::Event e) {
@@ -121,6 +122,7 @@ int _tmain(int argc, _TCHAR* argv[])
 		try {
 			fout.reset(new wofstream(logFileName));
 			ostringstream encodingString;
+			//File encoding is different from console one.
 			encodingString<< "." << GetACP();
 			locale logLocale(encodingString.str()); 
 			logLocale = locale(logLocale, &use_facet<numpunct<wchar_t> >(locale("C"))); //Remove decimal separator.
@@ -131,6 +133,7 @@ int _tmain(int argc, _TCHAR* argv[])
 		}
 		{
 			ostringstream encodingString;
+			//Windows console encoding is a very strange artifact and handled separately.
 			encodingString<< "." << GetConsoleOutputCP();
 			locale consoleLocale(encodingString.str());
 			consoleLocale = locale(consoleLocale, &use_facet<numpunct<wchar_t> >(locale("C"))); //Remove decimal separator.
@@ -143,8 +146,8 @@ int _tmain(int argc, _TCHAR* argv[])
 		ComInitializer comInitializer;
 		IWbemServicesPtr services = connectToWmiServices();
 
-		//Create event filter and configure filtered events processing
-		VirtualSizeChanges tasks;
+		//Create event filter and configure filtered events processing (dumping notifications to console and log file)
+		WorkingSetChanges tasks;
 		tasks.listeners.connect([&](Tasks::Event e, const Task& task){
 			wcout.clear(); //Exotic encoding (of ProcessName) may corrupt stream state.
 			wcout << left << setw(30) << task.name() << L" " << e << L" " << task << endl;
@@ -159,7 +162,8 @@ int _tmain(int argc, _TCHAR* argv[])
 			if (x && false)
 				wcout << *x << endl;
 		};
-		const bool async = false;
+
+		const bool async = false; //Change this to try different approaches for event handling
 
 		if (async) {
 			//Asynchrnonous unsecured event handling
@@ -169,7 +173,8 @@ int _tmain(int argc, _TCHAR* argv[])
 			}
 			_getwch();
 		} else {
-			//Semisynchronous event streaming
+			// Semisynchronous event streaming
+			// Multiple threads are created to illustrate how synchronization works
 			vector<InterruptingThread> threads;
 			for each (const wstring & query in queries) {
 				threads.push_back(InterruptingThread([=](){

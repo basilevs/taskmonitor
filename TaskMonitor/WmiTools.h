@@ -29,6 +29,7 @@ public:
 
 
 //Creates and manages EventSink and a connection to it
+//Events are immediately passed to callback
 class AsyncWmiQuery {
 	std::unique_ptr<AsyncQueryHandle> _handle;
 	boost::signals2::scoped_connection _connection;
@@ -36,9 +37,13 @@ public:
 	AsyncWmiQuery(const IWbemServicesPtr & services, const _bstr_t & query, std::function<void(IWbemClassObject * x)> callback);
 };
 
+//Handles semisyncronous WMI request
+//Events are extracted with next().
 class SemisyncWmiQuery {
 	IEnumWbemClassObjectPtr _enumerator;
 public:
 	SemisyncWmiQuery(const IWbemServicesPtr & services, const _bstr_t & query);
+	// Returns next event if present
+	// Reurns 0 if there was no event during hard-coded timeout
 	IWbemClassObjectPtr next();
 };
