@@ -12,3 +12,8 @@ Note: console and file encoding are taken from system locale (and may be differe
 Each line of log have following format:
 ProcessName Status ProcessId WorkingSetSize
 
+Originally the idea was to print an amount of memory allocated for application.
+Unfortunately, VirtualSize, the closest of easily obtained process parammeters doesn't exactly meet the requrements.
+(It is size of used address space, not an amount of memory used).
+
+
